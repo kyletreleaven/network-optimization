@@ -31,13 +31,10 @@ def edge_data_iter( graph ) :
 def graph_data_iter( graph ) :
     return itertools.chain( node_data_iter( graph ), edge_data_iter( graph ) )
 
-def compute_totalflow( flowgraph, s, flow='flow' ) :
-    flows = [ peel_flow( data, flow=flow ) for _,__,data in flowgraph.out_edges_iter( s, data=True ) ]
+def totalflow( flowgraph, flow='flow' ) :
+    source_node = flowgraph.graph['s']
+    flows = [ peel_flow( data, flow=flow ) for _,__,data in flowgraph.out_edges_iter( source_node, data=True ) ]
     return sum( flows )
-
-def compute_totalcost( flowgraph, flow='flow', cost='cost' ) :
-    costs = [ peel_cost( data, cost=cost ) for data in edge_data_iter( flowgraph ) ]
-    return sum( costs )
 
 def collect_constraints( flowgraph, constraints='constraints' ) :
     constraints = []
@@ -45,12 +42,17 @@ def collect_constraints( flowgraph, constraints='constraints' ) :
         constraints.extend( peel_constraints( data ) )
     return constraints
 
+def totalcost( costgraph, cost='cost' ) :
+    costs = [ peel_cost( data, cost=cost ) for data in edge_data_iter( costgraph ) ]
+    return sum( costs )
 
 
 
 
-""" a nice utility for weighted graphs """
-def OptimizationGraph( digraph, s, t, capacity='capacity', weight_in='weight', **kwargs ) :
+
+
+""" construct an optimization graph with flows and constraints (no costs) """
+def obtainFlowNetwork( digraph, s, t, capacity='capacity', **kwargs ) :
     if isinstance( digraph, nx.MultiDiGraph ) :
         ITER = digraph.edges_iter( keys=True, data=True )
     elif isinstance( digraph, nx.DiGraph ) :
@@ -59,69 +61,81 @@ def OptimizationGraph( digraph, s, t, capacity='capacity', weight_in='weight', *
         raise Exception( 'must be directed graph' )
     
     # these and <weight> are the output attributes
-    flow_key = kwargs.get( 'flow', 'flow' )
-    constraints_key = kwargs.get( 'constraints', 'constraints' )
-    cost_out = kwargs.get( 'cost_out', 'cost' )
+    flow_out = kwargs.get( 'flow', 'flow' )
+    constraints_out = kwargs.get( 'constraints', 'constraints' )
     
     # build the graph
-    opt = nx.MultiDiGraph()
+    flowgraph = nx.MultiDiGraph()
     
     for it in ITER :
         e = it[:-1] ; data = it[-1]
         cap = data.get( capacity, np.inf )
-        weight = data.get( weight_in, 0. )
         
         flow = cvxpy.variable()
         constr = [ cvxpy.geq( flow, 0.) ]
         if cap < np.inf : constr.append( cvxpy.leq( flow, cap ) )
-        cost = weight * flow
         #print weight, flow, cost
         
-        edge_data = { flow_key : flow, constraints_key : constr, cost_out : cost }
-        opt.add_edge( *e, attr_dict=edge_data )
+        edge_data = { flow_out : flow, constraints_out : constr }
+        flowgraph.add_edge( *e, attr_dict=edge_data )
         
-    for u, u_data in opt.nodes_iter( data=True ) :
+    for u, u_data in flowgraph.nodes_iter( data=True ) :
         if u in [ s, t ] : continue
         
-        in_flows = [ data.get( flow_key ) for _,__,data in opt.in_edges( u, data=True ) ]
+        in_flows = [ data.get( flow_out ) for _,__,data in flowgraph.in_edges( u, data=True ) ]
         in_degree = cvxpy.sum( in_flows )
-        out_flows = [ data.get( flow_key ) for _,__,data in opt.out_edges( u, data=True ) ]
+        out_flows = [ data.get( flow_out ) for _,__,data in flowgraph.out_edges( u, data=True ) ]
         out_degree = cvxpy.sum( out_flows )
         
-        u_data[ constraints_key ] = [ cvxpy.eq( out_degree, in_degree ) ]
+        u_data[ constraints_out ] = [ cvxpy.eq( out_degree, in_degree ) ]
         
-    opt.graph['s'] = s
-    opt.graph['t'] = t
-    return opt
+    flowgraph.graph['s'] = s
+    flowgraph.graph['t'] = t
+    return flowgraph
+
+
+def obtainWeightedCosts( flowgraph, wgraph, weight='weight', **kwargs ) :
+    if isinstance( wgraph, nx.MultiDiGraph ) :
+        LOOKUP = lambda *e : wgraph.get_edge_data( *e )
+    elif isinstance( wgraph, nx.DiGraph ) :
+        LOOKUP = lambda u,v,key : wgraph.get_edge_data( u, v )
+    else :
+        raise Exception( 'digraph must be a digraph' )
+    
+    res = nx.MultiDiGraph()
+    flow_in = kwargs.get( 'flow', 'flow' ) 
+    cost_out = kwargs.get( 'cost', 'cost' )
+    
+    for u,v,key, flow_data in flowgraph.edges_iter( keys=True, data=True ) :
+        wgraph_data = LOOKUP( u, v, key )
         
+        curr_flow = flow_data.get( flow_in, 0. )
+        curr_weight = wgraph_data.get( weight, 0. )
+        #print ( curr_flow, curr_weight )
+        edge_data = { cost_out : curr_weight * curr_flow }
+        res.add_edge( u,v,key, attr_dict=edge_data )
         
-def FlowGraphStatistics( flowgraph, **kwargs ) :
-    s = flowgraph.graph['s']        # used to make a lot of things depend on s; no longer!
-    
-    flow = kwargs.get( 'flow', 'flow' )
-    constraints = kwargs.get( 'constraints', 'constraints' )
-    cost_in = kwargs.get( 'cost', 'cost' )
-    
-    res = data()
-    res.total_flow = compute_totalflow( flowgraph, s, flow=flow )
-    res.constraints = collect_constraints( flowgraph, constraints=constraints )
-    res.total_cost = compute_totalcost( flowgraph, flow=flow, cost=cost_in )
-    
     return res
 
 
+
 """ compute quantities from the flow graph """
- 
-def flow_values( flowgraph, flow='flow', flow_in='flow' ) :
+
+def flow_values( flowgraph, **kwargs ) :
+    flow_in = kwargs.get( 'flow_in', 'flow' )
+    flow_out = kwargs.get( 'flow_out', 'flow' )
+    
     res = nx.MultiDiGraph()
     for u,v,key, data in flowgraph.edges_iter( keys=True, data=True ) :
         flowvar = data.get( flow_in )
         flowval = flowvar.value
-        res.add_edge( u,v, key, { flow : flowval } )
-        
+        res.add_edge( u,v, key, { flow_out : flowval } )
     return res
 
-def flow_costs( flowgraph, cost='cost', cost_in='cost' ) :
+def cost_values( costgraph, **kwargs ) :
+    cost_in = kwargs.get( 'cost_in', 'cost' )
+    cost_out = kwargs.get( 'cost_out', 'cost' )
+    
     def get_val( var ) :
         try :
             return var.value
@@ -129,88 +143,45 @@ def flow_costs( flowgraph, cost='cost', cost_in='cost' ) :
             return var
         
     res = nx.MultiDiGraph()
-    for u,v,key, data in flowgraph.edges_iter( keys=True, data=True ) :
+    for u,v,key, data in costgraph.edges_iter( keys=True, data=True ) :
         cost_expr = data.get( cost_in, 0. )
         cost_val = get_val( cost_expr )
-        res.add_edge( u,v, key, { cost : cost_val } )
-        
+        res.add_edge( u,v, key, { cost_out : cost_val } )
     return res
-
-def flow_cost( flowgraph, cost='cost' ) :
-    digraph = flow_costs( flowgraph, 'cost', cost_in=cost )
-    costs = [ data.get('cost') for _,__,data in digraph.edges_iter( data=True ) ]
-    return sum( costs )
-
-
-def flow_weighted_cost( flowgraph, digraph, flow='flow', weight='weight' ) :
-    if isinstance( digraph, nx.MultiDiGraph ) :
-        LOOKUP = lambda *e : digraph.get_edge_data( *e )
-    elif isinstance( digraph, nx.DiGraph ) :
-        LOOKUP = lambda u,v,key : digraph.get_edge_data( u, v )
-    else :
-        raise Exception( 'digraph must be a digraph' )
-    
-    res = 0.
-    for u,v,key, flow_data in flowgraph.edges_iter( keys=True, data=True ) :
-        graph_data = LOOKUP( u, v, key )
-        
-        curr_flow = flow_data.get( flow, 0. )
-        curr_weight = graph_data.get( weight, 0. )
-        #print ( curr_flow, curr_weight )
-        res += curr_flow * curr_weight
-        
-    return res
-
 
 
 
 """ PROBLEMS """
 
-def compute_max_flow( flowgraph, flow_out='flow', **kwargs ) :
+def max_flow( flowgraph, **kwargs ) :
     flow_in = kwargs.get( 'flow', 'flow' )
     constraints_in = kwargs.get( 'constraints', 'constraints' )
-    #weight_in = kwargs.get( 'weight', 'weight' )
     
-    stats = FlowGraphStatistics( flowgraph, flow=flow_in, constraints=constraints_in )
-    program = cvxpy.program( cvxpy.maximize( stats.total_flow ), stats.constraints )
+    total_flow = totalflow( flowgraph, flow=flow_in )
+    constraints = collect_constraints( flowgraph, constraints=constraints_in )
+    program = cvxpy.program( cvxpy.maximize( total_flow ), constraints )
+    #
     quiet = kwargs.get( 'quiet', False )
     program.solve( quiet )
     
-def max_flow( digraph, s, t, capacity='capacity', weight='weight', flow='flow' ) :
-    opt = OptimizationGraph( digraph, s, t, capacity=capacity, weight=weight )
-    compute_max_flow( opt )
-    return opt
-
-
-
-
-
-def compute_max_flow_min_cost( flowgraph, flow_out='flow', **kwargs ) :
+def max_flow_min_cost( flowgraph, costgraph, **kwargs ) :
     flow_in = kwargs.get( 'flow', 'flow' )
     constraints_in = kwargs.get( 'constraints', 'constraints' )
-    
-    stats = FlowGraphStatistics( flowgraph, flow=flow_in, constraints=constraints_in )
-    
-    program1 = cvxpy.program( cvxpy.maximize( stats.total_flow ), stats.constraints )
-    max_flow = program1.solve()
-    
-    delta = kwargs.get( 'delta', DEFAULT_DELTA )
-    constraints2 = [ c for c in stats.constraints ] + [ cvxpy.geq( stats.total_flow, max_flow - delta ) ]
-    
-    program2 = cvxpy.program( cvxpy.minimize( stats.total_cost ), constraints2 )
+    cost_in = kwargs.get( 'cost', 'cost' )
     quiet = kwargs.get( 'quiet', False )
+    delta = kwargs.get( 'delta', DEFAULT_DELTA )
+    
+    total_flow = totalflow( flowgraph, flow=flow_in )
+    constraints = collect_constraints( flowgraph, constraints=constraints_in )
+    
+    program1 = cvxpy.program( cvxpy.maximize( total_flow ), constraints )
+    max_flow = program1.solve( quiet )
+    
+    constraints2 = [ c for c in constraints ] + [ cvxpy.geq( total_flow, max_flow - delta ) ]
+    total_cost = totalcost( costgraph, cost=cost_in )
+    
+    program2 = cvxpy.program( cvxpy.minimize( total_cost ), constraints2 )
     program2.solve( quiet )
-
-
-def max_flow_min_cost( digraph, s, t, capacity='capacity', weight='weight', flow='flow' ) :
-    opt = OptimizationGraph( digraph, s, t, capacity=capacity, weight=weight )
-    compute_max_flow_min_cost( opt )
-    return opt
-
-
-
-
-
 
 
 
@@ -235,10 +206,12 @@ if __name__ == '__main__' :
     
     #opt = OptimizationGraph( g, 's', 't' )
     #res = max_flow_on_flowgraph( opt )
-    res = max_flow_min_cost( g, 's', 't' )
+    flowgraph = obtainFlowNetwork( g, 's', 't' )
+    costgraph = obtainWeightedCosts( flowgraph, g )
     
-    print flow_cost( res )
-    #print flow_cost( res, g )
+    max_flow_min_cost( flowgraph, costgraph )
+    print totalcost( costgraph ).value
+    
 
 
 
