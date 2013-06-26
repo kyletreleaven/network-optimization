@@ -6,7 +6,7 @@ import numpy as np
 import networkx as nx
 import cvxpy
 
-DEFAULT_DELTA = 0.0001  # there are numerical issues if DELTA == 0.
+DEFAULT_DELTA = 0.00001  # there are numerical issues if DELTA == 0.
 
 
 class data(object) : pass
@@ -108,9 +108,10 @@ def obtainWeightedCosts( flowgraph, wgraph, weight='weight', **kwargs ) :
     
     for u,v,key, flow_data in flowgraph.edges_iter( keys=True, data=True ) :
         wgraph_data = LOOKUP( u, v, key )
+        curr_weight = wgraph_data.get( weight, 0. )
+        #if curr_weight is None : continue
         
         curr_flow = flow_data.get( flow_in, 0. )
-        curr_weight = wgraph_data.get( weight, 0. )
         #print ( curr_flow, curr_weight )
         edge_data = { cost_out : curr_weight * curr_flow }
         res.add_edge( u,v,key, attr_dict=edge_data )
