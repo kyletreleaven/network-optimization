@@ -103,17 +103,19 @@ def obtainWeightedCosts( flowgraph, wgraph, weight='weight', **kwargs ) :
         raise Exception( 'digraph must be a digraph' )
     
     res = nx.MultiDiGraph()
-    flow_in = kwargs.get( 'flow', 'flow' ) 
+    flow_in = kwargs.get( 'flow', 'flow' )
     cost_out = kwargs.get( 'cost', 'cost' )
     
     for u,v,key, flow_data in flowgraph.edges_iter( keys=True, data=True ) :
         wgraph_data = LOOKUP( u, v, key )
-        curr_weight = wgraph_data.get( weight, 0. )
-        #if curr_weight is None : continue
         
-        curr_flow = flow_data.get( flow_in, 0. )
-        #print ( curr_flow, curr_weight )
-        edge_data = { cost_out : curr_weight * curr_flow }
+        if wgraph_data is None :
+            edge_data = None
+        else :
+            curr_flow = flow_data.get( flow_in, 0. )
+            curr_weight = wgraph_data.get( weight, 0. )
+            edge_data = { cost_out : curr_weight * curr_flow }
+        
         res.add_edge( u,v,key, attr_dict=edge_data )
         
     return res
