@@ -67,13 +67,13 @@ def obtainCapacityNetwork( lengraph, supplygraph, length='length', weight1='weig
     
     # add the supply/demand capacity edges
     for u, data in supplygraph.nodes_iter( data=True ) :
-        if data.get( weight1, 0. ) > 0. :
-            res.add_edge( s, u, capacity=weight1 )
-        if data.get( weight2, 0. ) > 0. :
-            res.add_edge( u, t, capacity=weight2 )
-            
+        supply = data.get( weight1, 0. )
+        if supply > 0. : res.add_edge( s, u, capacity=supply )
+        
+        demand = data.get( weight2, 0. )
+        if demand > 0. : res.add_edge( u, t, capacity=demand )
+        
     return res, s, t
-
 
 
 
