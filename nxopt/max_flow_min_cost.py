@@ -11,6 +11,8 @@ DEFAULT_DELTA = 0.00001  # there are numerical issues if DELTA == 0.
 
 class data(object) : pass
 
+class node(object) : pass
+
 
 """ convenience """
 def peel_flow( data, flow='flow' ) : return data.get( flow, 0. )
@@ -46,6 +48,31 @@ def totalcost( costgraph, cost='cost' ) :
     costs = [ peel_cost( data, cost=cost ) for data in edge_data_iter( costgraph ) ]
     return sum( costs )
 
+
+
+
+
+
+
+""" network transformation utilities """ 
+
+
+def obtainCapacityNetwork( lengraph, supplygraph, length='length', weight1='weight1', weight2='weight2' ) :
+    res = nx.MultiDiGraph()
+    s = node() ; res.add_node( s )      # just in case; needs to be there
+    t = node() ; res.add_node( t )
+    
+    # add all the edges from lengraph
+    res.add_edges_from( lengraph.edges_iter() )      # I think that works
+    
+    # add the supply/demand capacity edges
+    for u, data in supplygraph.nodes_iter( data=True ) :
+        if data.get( weight1, 0. ) > 0. :
+            res.add_edge( s, u, capacity=weight1 )
+        if data.get( weight2, 0. ) > 0. :
+            res.add_edge( u, t, capacity=weight2 )
+            
+    return res, s, t
 
 
 
