@@ -4,9 +4,9 @@ import itertools
 
 import numpy as np
 
-from setiptah.mygraph import mygraph
-from setiptah.dijkstra import Dijkstra
-from setiptah.toposort import toposort
+from setiptah.basic_graph.mygraph import mygraph
+from setiptah.basic_graph.dijkstra import Dijkstra
+from setiptah.basic_graph.toposort import toposort
 
 
 class line :
