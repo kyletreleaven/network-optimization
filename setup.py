@@ -8,6 +8,6 @@ setup(
 	author_email = "ktreleav@gmail.com",
 	version = "0.0.0",
 	packages = find_packages(),
-	namespace_packages = [ 'setiptah', ],
+	namespace_packages = [ 'setiptah', 'setiptah.nxopt', ],
 )
 
