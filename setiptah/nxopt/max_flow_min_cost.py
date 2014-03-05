@@ -4,7 +4,41 @@ import itertools
 import numpy as np
 
 import networkx as nx
+
 import cvxpy
+
+# fix!
+class mycvxpy :
+    """ adapter for any future cvxpy APIs """
+    
+    # variables
+    @classmethod
+    def variable(cls) : return cvxpy.Variable()
+        
+    # constraints
+    @classmethod
+    def eq(cls, lhs, rhs ) : return cvxpy.constraints.EqConstraint( lhs, rhs )
+    @classmethod
+    def leq(cls, lhs, rhs ) : return cvxpy.constraints.LeqConstraint( lhs, rhs )
+    @classmethod
+    def geq(self, lhs, rhs ) : return cvxpy.constraints.LeqConstraint( rhs, lhs )
+    
+    # math
+    #@classmethod
+    #def sum(cls, x ) : return cvxpy.sum( x )
+    
+    # objective
+    @classmethod
+    def minimize(cls, x ) : return cvxpy.Minimize( x )
+    @classmethod
+    def maximize(cls, x ) : return cvxpy.Maximize( x )
+    
+    # program
+    @classmethod
+    def program(cls, *args, **kwargs ) : return cvxpy.Problem( *args, **kwargs )
+    
+
+
 
 DEFAULT_DELTA = 0.00001  # there are numerical issues if DELTA == 0.
 
@@ -98,9 +132,9 @@ def obtainFlowNetwork( digraph, s, t, capacity='capacity', **kwargs ) :
         e = it[:-1] ; data = it[-1]
         cap = data.get( capacity, np.inf )
         
-        flow = cvxpy.variable()
-        constr = [ cvxpy.geq( flow, 0.) ]
-        if cap < np.inf : constr.append( cvxpy.leq( flow, cap ) )
+        flow = mycvxpy.variable()
+        constr = [ mycvxpy.geq( flow, 0.) ]
+        if cap < np.inf : constr.append( mycvxpy.leq( flow, cap ) )
         #print weight, flow, cost
         
         edge_data = { flow_out : flow, constraints_out : constr }
@@ -110,11 +144,11 @@ def obtainFlowNetwork( digraph, s, t, capacity='capacity', **kwargs ) :
         if u in [ s, t ] : continue
         
         in_flows = [ data.get( flow_out ) for _,__,data in flowgraph.in_edges( u, data=True ) ]
-        in_degree = cvxpy.sum( in_flows )
+        in_degree = sum( in_flows )
         out_flows = [ data.get( flow_out ) for _,__,data in flowgraph.out_edges( u, data=True ) ]
-        out_degree = cvxpy.sum( out_flows )
+        out_degree = sum( out_flows )
         
-        u_data[ constraints_out ] = [ cvxpy.eq( out_degree, in_degree ) ]
+        u_data[ constraints_out ] = [ mycvxpy.eq( out_degree, in_degree ) ]
         
     flowgraph.graph['s'] = s
     flowgraph.graph['t'] = t
@@ -189,7 +223,7 @@ def max_flow( flowgraph, **kwargs ) :
     
     total_flow = totalflow( flowgraph, flow=flow_in )
     constraints = collect_constraints( flowgraph, constraints=constraints_in )
-    program = cvxpy.program( cvxpy.maximize( total_flow ), constraints )
+    program = mycvxpy.program( mycvxpy.maximize( total_flow ), constraints )
     #
     quiet = kwargs.get( 'quiet', False )
     program.solve( quiet )
@@ -204,13 +238,13 @@ def max_flow_min_cost( flowgraph, costgraph, **kwargs ) :
     total_flow = totalflow( flowgraph, flow=flow_in )
     constraints = collect_constraints( flowgraph, constraints=constraints_in )
     
-    program1 = cvxpy.program( cvxpy.maximize( total_flow ), constraints )
+    program1 = mycvxpy.program( mycvxpy.maximize( total_flow ), constraints )
     max_flow = program1.solve( quiet )
     
-    constraints2 = [ c for c in constraints ] + [ cvxpy.geq( total_flow, max_flow - delta ) ]
+    constraints2 = [ c for c in constraints ] + [ mycvxpy.geq( total_flow, max_flow - delta ) ]
     total_cost = totalcost( costgraph, cost=cost_in )
     
-    program2 = cvxpy.program( cvxpy.minimize( total_cost ), constraints2 )
+    program2 = mycvxpy.program( mycvxpy.minimize( total_cost ), constraints2 )
     program2.solve( quiet )
 
 
